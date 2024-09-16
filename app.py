@@ -187,6 +187,8 @@ def transcode_video_que():
     if global_data['running']['isRunning']: #if somthing is already running, chill bro-
         global_data['msg'] = "Something is already running. Please wait for it to finish."
         return jsonify(global_data)
+    global_data['running']['isRunning'] = True;
+
 
     global_data['transcode_settings'] = request.get_json();
 
@@ -243,4 +245,4 @@ def fetch_data():
     return jsonify(global_data)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="192.168.50.68", port=8265)

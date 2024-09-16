@@ -338,14 +338,31 @@
         }
 
         async function updateProgress(data) {
-            const progress = parseInt(data.running.progress, 10);
+            progress = parseInt(data.running.progress, 10);
+            if (progress < 0) {
+                progress = 0;
+            }
+
             const progressBar = document.getElementById('progress-bar');
             progressBar.style.width = `${progress}%`;
             progressBar.textContent = `${progress}%`;
 
             const infoItem = document.getElementById('progress-text');
-            const timeLeft = Math.round(data.running.time_left);
+            timeLeft = Math.round(data.running.time_left);
+            if (timeLeft < 0) {
+                timeLeft = "Nan";
+            }
             const totalTime = Math.round(data.running.total_time);
+            total_items = data.running.total_items;
+            if (total_items < 0) {
+                total_items = "Nan";
+            }
+
+            processed_items = data.running.processed_items;
+            if (processed_items < 0) {
+                processed_items = "Nan";
+            }
+
             infoItem.innerHTML = `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`
             infoItem.innerHTML += `${data.running.processed_items}/${data.running.total_items} items, Time left: ${timeLeft}s, Total time: ${totalTime}s`;
         

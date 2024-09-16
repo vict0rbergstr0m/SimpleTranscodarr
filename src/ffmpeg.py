@@ -81,22 +81,25 @@ def transcode_file(input_file, output_dir, resolution, codec="libx265", crf="22"
     for (stdout, stderr) in __run_open_command(command):
         # outs.append(stdout)
         # errs.append(stderr)
-        # print(outs)
+        print(stderr)
 
-        if "NUMBER_OF_FRAMES: " in stderr and transcode_info['NUMBER_OF_FRAMES'] == -1:
+        if "NUMBER_OF_FRAMES" in stderr and transcode_info['NUMBER_OF_FRAMES'] == -1:
             transcode_info['NUMBER_OF_FRAMES'] = int(re.sub('[^0-9\.]', '', stderr))
-        if "frame=" in stdout:
-            transcode_info['frame'] = int(re.sub('[^0-9\.]', '', stdout))
-        if "fps=" in stdout:
-            transcode_info['fps'] = float(re.sub('[^0-9\.]', '', stdout))
+
+        if "frame=" in stderr:
+            # stderr = re.sub(' +', ' ', stderr)
+            transcode_info['frame'] = int(re.search(r"frame=\s*(\d+)", stderr).group(1))
+        if "fps=" in stderr:
+            # stderr = re.sub(' +', ' ', stderr)
+            transcode_info['fps'] = int(re.search(r"fps=\s*(\d+)", stderr).group(1))
         
         yield transcode_info
 
     if remove_original:
         os.remove(input_file)
 
-    final_file_without_temp = final_file.replace("_temp", "_transcoded")
-    os.rename(final_file, final_file_without_temp)
+    # final_file_without_temp = final_file.replace("_temp", "_transcoded")
+    # os.rename(final_file, final_file_without_temp)
 
 
 if __name__ == "__main__":
