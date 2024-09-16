@@ -15,13 +15,14 @@ def __run_command(command):
 def __run_open_command(command):
     """Run a shell command and yield the output line by line."""
     os.chdir(os.path.expanduser('~'))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=1, universal_newlines=True)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while True:
-        output = process.stdout.readline()
-        if output:
-            yield output.strip()
-        if process.poll() is not None:
+        output_err = process.stderr.readline()
+        output_out = process.stdout.readline()
+        if output_out == '' and process.poll() is not None:
             break
+        if output_out:
+            print(output_out.strip())
 
 def get_ffmpeg_version():
     """Get the version of ffmpeg."""
@@ -58,6 +59,7 @@ def transcode_file(input_file, output_dir, resolution, codec="libx265", crf="22"
     command = [
         "ffmpeg",
         "-i", input_file,
+        "-progress", "-",
         "-vf", f"scale=-1:{resolution}",
         "-c:v", codec,
         "-crf", str(crf),
@@ -66,8 +68,10 @@ def transcode_file(input_file, output_dir, resolution, codec="libx265", crf="22"
         final_file
     ]
 
-    for output in __run_open_command(command):
-        yield output
+    __run_open_command(command)
+
+    # for output in __run_open_command(command):
+    #     yield output
 
     if remove_original:
         os.remove(input_file)
