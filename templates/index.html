@@ -200,7 +200,7 @@
 
     <script>
 
-        var defaultInterval = 5000;
+        var defaultInterval = 4000;
         var fastInterval = 250;
 
         document.getElementById('scanButton').addEventListener('click', handleScanClick);
@@ -251,6 +251,8 @@
                     crf: crf
                 })
             });
+
+            changeInterval(defaultInterval);
         }
 
         async function applyFilters() {

@@ -207,26 +207,27 @@ def transcode_video_que():
         if resolution == "":
             resolution = item['res'];
 
-        for output in transcode_file(item['path'],
+        for transcode_info in transcode_file(item['path'],
                     item['path'].replace(item['name'],""),
                     resolution,
                     global_data['transcode_settings']['codec'],
                     global_data['transcode_settings']['crf'],
                     "slow",
                     global_data['transcode_settings']['container'],
-                    # remove_original=True,
+                    remove_original=True,
                 ):
-            print(output)
-            print("testtest")
-            pass
+            # print(transcode_info)
+            global_data['running']['progress'] = (float(transcode_info['frame'])/float(transcode_info['NUMBER_OF_FRAMES']))*100.0
+            global_data['running']['total_time'] = time.time() - startTime
+            global_data['running']['processed_items'] = transcode_info['frame']
+            global_data['running']['total_items'] = transcode_info['NUMBER_OF_FRAMES']
+
+            if transcode_info['fps'] != 0:
+                global_data['running']['time_left'] = (transcode_info['NUMBER_OF_FRAMES'] - transcode_info['frame'])/transcode_info['fps']
 
         processed_files += 1
-        global_data['running']['processed_items'] = processed_files
         endTime = time.time()
-        global_data['running']['time_per_item'].append(endTime - startTime)
-        global_data['running']['total_time'] = sum(global_data['running']['time_per_item'])
-        global_data['running']['time_left'] = (total_files - processed_files) * (sum(global_data['running']['time_per_item']) / processed_files)
-        global_data['running']['progress'] = int((processed_files / total_files) * 100)
+        # global_data['running']['time_per_item'].append(endTime - startTime)
         print(f"Transcoded {processed_files} files out of {total_files}.")
 
         endTime = time.time()
