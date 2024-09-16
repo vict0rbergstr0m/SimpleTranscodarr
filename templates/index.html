@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Directory Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        #container {
+            max-width: 96%;
+            margin: 50px auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #paths {
+            margin-top: 20px;
+            font-size: 16px;
+            color: #333;
+        }
+
+        #paths ul {
+            list-style-type: none; /* Remove default list styling */
+            padding: 0; /* Remove default padding */
+        }
+
+        #paths li {
+            padding: 8px 0;
+            border-bottom: 1px solid #ddd;
+        }
+
+        #paths li:last-child {
+            border-bottom: none; /* Remove border from the last item */
+        }
+
+        #progress-container {
+            display: flex;
+            align-items: center;
+        }
+
+        #progress-bar-container {
+            width: 50%;
+            height: 16px;
+            background-color: #f3f3f3;
+            border: 1px solid #ccc;
+            padding: 5px;
+            /* margin-top: 10px; */
+        }
+
+        #progress-bar {
+            width: 0;
+            height: 16px;
+            background-color: #4caf50;
+            text-align: center;
+            color: white;
+            line-height: 16px;
+        }
+        .scrollable-table {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            display: block;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="container">
+        <h2>Simple Transcoder</h2>
+
+        <label for="input_path">Input Path:</label>
+        <input type="text" id="input_path" name="input_path" required>
+
+    
+
+        <!-- Scan Button -->
+        <button id="scanButton">Scan</button>
+
+        <!-- Directory Paths List -->
+        <div id="paths">
+            <ul id="paths-list"></ul>
+        </div>
+
+        <div>
+            <h4>Filters</h4>
+            <label for="title-regex">Title regex:</label>
+            <input type="text" id="title-regex" name="title-regex" required>
+            <label for="Resolutions">Resolutions:</label>
+            <input type="text" id="Resolutions" name="Resolutions" required>
+            <label for="Encodings">Encodings:</label>
+            <input type="text" id="Encodings" name="Encodings" required>
+            <label for="Min_Size">Min size (GB):</label>
+            <input type="text" id="Min_Size" name="Min_Size" required>
+            <label for="Containers">Containers:</label>
+            <input type="text" id="Containers" name="Containers" required>
+            <p id="current-filter-settings"></p>
+        </div>
+        <br>
+        <button id="apply-filter">Apply filter</button>
+
+        <div>
+            <h4>Transcode settings</h4>
+            <label for="out_res">Output resolution (empty for same):</label>
+            <input type="text" id="out_res" name="out_res" required>
+            
+            <label for="out_encoding">Encoding:</label>
+            <select id="out_encoding" name="out_encoding" required>
+                <option value="libx264">H.264</option>
+                <option value="libx265">H.265/hvec</option>
+                <!-- Add more encoding options as needed -->
+            </select>
+            
+            <label for="out_container">Container:</label>
+            <select id="out_container" name="out_container" required>
+                <option value="mp4">MP4</option>
+                <option value="mkv">MKV</option>
+                <option value="avi">AVI</option>
+                <option value="mov">MOV</option>
+                <option value="flv">FLV</option>
+                <option value="webm">WebM</option>
+                <option value="ogg">Ogg</option>
+                <option value="ts">MPEG-TS</option>
+                <option value="m4v">M4V</option>
+                <option value="3gp">3GP</option>
+                <option value="wmv">WMV</option>
+                <!-- Add more encoding options as needed -->
+            </select>
+            
+            <label for="crf">Compression (22 average, 15 low, 28 high):</label>
+            <input type="text" id="crf" name="crf" required>
+        </div>
+        <div> 
+            <br>
+            <button id="transcode-button">Transcode all</button>
+        </div>
+
+        <br>
+        <div id="progress-container"></div>
+            <div id="progress-bar-container">
+                <div id="progress-bar">0%</div>
+            </div>
+            <p id="progress-text"></p>
+        </div>
+
+        <p id="current-transcode-settings"></p>
+
+
+        <h3>Found Files</h3>
+        <div class="scrollable-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Resolution</th>
+                        <th>Encoding</th>
+                        <th>Container</th>
+                        <th>Size</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Rows will be added here dynamically -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+
+        var defaultInterval = 5000;
+        var fastInterval = 250;
+
+        document.getElementById('scanButton').addEventListener('click', handleScanClick);
+        document.getElementById('input_path').addEventListener('input', updateResults);
+        document.getElementById('input_path').addEventListener('input', update);
+        document.getElementById('apply-filter').addEventListener('click', applyFilters);
+        document.getElementById('transcode-button').addEventListener('click', handleTranscodeClick);
+
+        async function handleScanClick()
+        {
+            let inputPath = document.getElementById('input_path').value;
+            if (!inputPath) {
+                inputPath = '/';  // Set default path if none is provided
+                document.getElementById('input_path').value = inputPath;
+            }
+
+            fetch('/scan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ path: inputPath })  // Send inputPath in the request body
+            });
+
+            changeInterval(fastInterval);
+        }
+
+        async function handleTranscodeClick() {
+            // 'crf': 22,
+            // 'codec': 'libx265',
+            // 'preset': 'slow',
+            // 'resolution': 1080,
+            // 'container': 'mkv'
+
+            const outRes = document.getElementById('out_res').value;
+            const outEncoding = document.getElementById('out_encoding').value;
+            const outContainer = document.getElementById('out_container').value;
+            const crf = document.getElementById('crf').value;
+            fetch('/transcode_video_que', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ 
+                    resolution: outRes,
+                    codec: outEncoding,
+                    container: outContainer,
+                    crf: crf
+                })
+            });
+        }
+
+        async function applyFilters() {
+            const inputPath = document.getElementById('input_path').value;
+            fetch('/apply-filter', {
+                method: 'POST',
+                headers: {
+                'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                path: inputPath,
+                title_regex: document.getElementById('title-regex').value,
+                resolutions: document.getElementById('Resolutions').value,
+                encodings: document.getElementById('Encodings').value,
+                min_size: document.getElementById('Min_Size').value,
+                containers: document.getElementById('Containers').value
+                })
+            });
+        }
+
+        async function getCurrentFilters() 
+        {
+            const data = await fetchData();
+            const filter = data.filtering;
+
+            document.getElementById('title-regex').value = filter.title_regex;
+
+            document.getElementById('Resolutions').value = "";
+            filter.resolutions.forEach(res => {
+                document.getElementById('Resolutions').value += res + ",";
+            });
+
+            document.getElementById('Encodings').value = "";
+            filter.encodings.forEach(enc => {
+                document.getElementById('Encodings').value += enc + ",";
+            });
+            document.getElementById('Min_Size').value = filter.min_size;
+            document.getElementById('Containers').value = "";
+            filter.containers.forEach(cont => {
+                document.getElementById('Containers').value += cont + ",";
+            })
+        }
+
+        async function getCurrentTranscodeSettings()
+        {
+            // 'transcode_settings': 
+            // {
+            //     'crf': 22,
+            //     'codec': 'libx265',
+            //     'resolution': 1080,
+            //     'container': 'mkv'
+            // }
+
+            const data = await fetchData();
+            const transcode = data.transcode_settings;
+            document.getElementById('crf').value = transcode.crf;
+            document.getElementById('out_encoding').value = transcode.codec;
+            document.getElementById('out_res').value = transcode.resolution;
+            document.getElementById('out_container').value = transcode.container;
+        } 
+
+        async function updateResults() {
+            const inputPath = document.getElementById('input_path').value;
+
+            const response = await fetch('/index', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `input_path=${encodeURIComponent(inputPath)}`
+            });
+        }
+
+        async function update() {
+            const data = await fetchData(); // Return all data
+            await updateProgress(data);
+            await updatePaths(data);
+            await updateFoundFiles(data);
+        }
+
+        async function fetchData() {
+            const response = await fetch('/fetch-data');
+            const data = await response.json();
+            return data;
+        }
+
+        async function updateProgress(data) {
+            const progress = parseInt(data.running.progress, 10);
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${progress}%`;
+
+            const infoItem = document.getElementById('progress-text');
+            const timeLeft = Math.round(data.running.time_left);
+            const totalTime = Math.round(data.running.total_time);
+            infoItem.innerHTML = `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`
+            infoItem.innerHTML += `${data.running.processed_items}/${data.running.total_items} items, Time left: ${timeLeft}s, Total time: ${totalTime}s`;
+        
+            if (progress > 99) {
+                changeInterval(defaultInterval);
+            }
+        }
+
+        async function updatePaths(data) {
+            const pathsItem = document.getElementById('paths-list');
+            const paths = data.filtering.sub_directories;
+
+            // Clear existing content
+            pathsItem.innerHTML = `<li>${data.filtering.path}</li>`;
+
+            pathsItem.innerHTML += `<button onclick="handlePathClick('..')">..</button>`;
+
+            // Append each item as a button
+            paths.forEach(item => {
+                if (item[0] == '.') return;
+                pathsItem.innerHTML += `<button onclick="handlePathClick('${item}')">${item}</button>`;
+            });
+        }
+
+        async function handlePathClick(path) {
+            // You can handle button clicks here
+            const pathsItem = document.getElementById('paths-list').innerHTML;
+            const regex = /<li>(.*?)<\/li>/;
+            const match = pathsItem.match(regex);
+            const realPath = match[1];
+
+            if (path == '..') {
+
+                const lastIndex = realPath.lastIndexOf("/");
+                if (lastIndex == -1)
+                {
+                    return;
+                }
+                const newPath = realPath.slice(0, lastIndex);
+
+                document.getElementById('input_path').value = newPath;
+            }
+            else
+            {
+                document.getElementById('input_path').value = realPath + "/" + path;
+            }
+
+            updateResults();
+            setTimeout(update,50);
+        }
+
+        async function updateFoundFiles(data) {
+            const tableBody = document.getElementById('table-body');
+            tableBody.innerHTML = '';
+            found_items = data.running.found_items;
+
+            found_items.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.name}</td>
+                    <td>${item.res}</td>
+                    <td>${item.encoding}</td>
+                    <td>${item.container}</td>
+                    <td>${item.size}</td>
+                `;
+                tableBody.appendChild(row);
+            });            
+        }
+
+        // Call this function to periodically fetch updated data
+        update();
+        updateResults();
+        getCurrentFilters();
+        getCurrentTranscodeSettings();
+        update();
+        
+        var currentIntervalTime = defaultInterval;
+        var interval = setInterval(update, currentIntervalTime);
+        async function changeInterval(intervalTime) {
+            if (intervalTime == currentIntervalTime) {
+                return;
+            }
+            clearInterval(interval);
+            console.log("set intervall to: " + intervalTime);
+            interval = setInterval(update, intervalTime);
+            currentIntervalTime = intervalTime;
+            update();
+        }
+
+    </script>
+</body>
+</html>
