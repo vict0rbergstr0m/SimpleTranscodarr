@@ -1,0 +1,12 @@
+services:
+  flask:
+    build: .
+    ports:
+      - "8265:8265"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_RUN_HOST=0.0.0.0
+    volumes:
+      - /home/victor/Docker/SimpleTranscodarr/config:/config
+      - /home/victor/bDrive/mediaBDrive:/bDrive
+      - /home/victor/cDrive/mediaCDrive:/cDrive

@@ -10,7 +10,7 @@ app = Flask(__name__)
 global_data = {
     'msg': '',
     'filtering': {
-        'path': os.path.expanduser('~'),
+        'path': '/',
         'sub_directories': ["/"],
         'title_regex': "",
         'resolutions': [],
@@ -39,21 +39,6 @@ global_data = {
         'container': 'mkv'
     }
     }
-
-
-def index():
-    if global_data['running']['isRunning']: #if scan is already running, chill bro-
-        global_data['msg'] = "Something is already running. Please wait for it to finish."
-        return jsonify(global_data)  
-    path = os.path.expanduser('~')
-    if os.path.exists(path):
-        global_data['filtering']['path'] = path
-        items = []
-        for item in os.listdir(path):
-            items.append(item)
-        global_data['filtering']['sub_directories'] = items
-
-index();
 
 @app.route('/apply-filter', methods=['POST'])
 def apply_filter():
@@ -245,4 +230,4 @@ def fetch_data():
     return jsonify(global_data)
 
 if __name__ == '__main__':
-    app.run(host="192.168.50.68", port=8265)
+    app.run(host="0.0.0.0", port=8265)

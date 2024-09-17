@@ -1,23 +1,21 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10-slim
+# Use the official Python 3.10 image as the base
+FROM python:3.10.12-slim
 
-# Install necessary packages
-RUN apt-get update && apt-get install -y ffmpeg
-
-# Set the working directory
+# Set the working directory to /app
 WORKDIR /app
 
-# Copy the current directory contents into the container at /app
-COPY . /app
+# Copy the requirements file
+COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
-RUN pip install flask
+# Install the dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+RUN apt-get update && apt-get install -y ffmpeg
 
-# Make port 5000 available to the world outside this container
-EXPOSE 5000
+# Copy the application code
+COPY . .
 
-# Define environment variable
-ENV NAME TranscoderApp
+# Expose the port
+EXPOSE 8265
 
-# Run the application
-CMD ["python", "app.py"]
+# Run the command to start the app #TODO: timeout should be 30 seconds when you fixed your multithreading shit
+CMD ["gunicorn", "-w", "6", "-b", "0.0.0.0:8265", "--timeout", "300", "app:app"]
