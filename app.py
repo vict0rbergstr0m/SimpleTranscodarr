@@ -3,9 +3,8 @@ import os
 from src.ffmpeg import *
 import re
 import time
-import json
-import redis #cache for consitent memory among threads/workers
-
+import redis
+from celery import Celery
 
 app = Flask(__name__)
 
@@ -236,7 +235,5 @@ def home():
 def fetch_data():
     return jsonify(global_data)
 
-
-update_global_data();
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8265)
