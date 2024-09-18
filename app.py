@@ -9,10 +9,10 @@ from celery import Celery
 app = Flask(__name__)
 
 # Create a Redis connection
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
 # Define a global variable
-global_data = {
+"""global_data = {
     'msg': '',
     'filtering': {
         'path': '/',
@@ -43,50 +43,132 @@ global_data = {
         'resolution': 1080,
         'container': 'mkv'
     }
+    }"""
+
+def initialize_cache():
+    """Initialize the cache with default values."""
+
+    """filtering"""
+    filtering = {
+        'path': '/',
+        'sub_directories': ["/"],
+        'title_regex': "",
+        'resolutions': [],
+        'encodings': [],
+        'min_size': "",
+        'containers': [
+            'mkv', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'ogg'
+        ]
     }
+    write_dict_to_cache("filtering", filtering)
+    
+    """running"""
+
+    running = {
+        'isRunning': False,
+        'progress': 0,
+        'time_left': -1,
+        'total_items': 0,
+        'processed_items': 0,
+        'total_time': 0,
+        "found_items": [],
+        "time_per_item": []
+    }
+
+    write_dict_to_cache("running", running)
+
+    """transcode_settings"""
+
+    transcode_settings = {
+        'crf': 22,
+        'codec': 'libx265',
+        'resolution': 1080,
+        'container': 'mkv'
+    }
+
+    write_dict_to_cache("transcode_settings", transcode_settings)
+
+
+def write_value_to_cache(key_name: str, value: str):
+    try:
+        r.set(key_name, value)
+    except redis.exceptions.RedisError as e:
+        print(f"Error writing to cache: {e}")
+
+def write_dict_to_cache(key_name: str, dictionary: dict):
+    try:
+        jsontext = json.dumps(dictionary)
+        r.set(key_name, jsontext)
+    except redis.exceptions.RedisError as e:
+        print(f"Error writing to cache: {e}")
+
+
+def read_value_from_cache(key_name: str):
+    try:
+        return r.get(key_name)
+    except redis.exceptions.RedisError as e:
+        print(f"Error reading from cache: {e}")
+
+def read_dict_from_cache(key_name: str):
+    try:
+        string_dict = r.get(key_name)
+        if string_dict is None:
+            return {}
+        found_dict = json.loads(string_dict)
+        return found_dict
+    except redis.exceptions.RedisError as e:
+        print(f"Error reading from cache: {e}")
 
 
 @app.route('/apply-filter', methods=['POST'])
 def apply_filter():
-    if global_data['running']['isRunning']: 
-        global_data['msg'] = "Something is already running. Please wait for it to finish."
-        return jsonify(global_data)
-    
-    data = request.get_json();
 
+    running_info = read_dict_from_cache("running")
+    if running_info['isRunning']:
+        return {"msg": "Something is already running. Please wait for it to finish."}
+    
+    filter_info = read_dict_from_cache("filtering")
+
+    data = request.get_json();
     def split_and_filter_empty(value):
         return [item for item in value.split(",") if item != ""]
 
-    global_data['filtering']['title_regex'] = data['title_regex']
-    global_data['filtering']['resolutions'] = split_and_filter_empty(data['resolutions'])
-    global_data['filtering']['encodings'] = split_and_filter_empty(data['encodings'])
-    global_data['filtering']['min_size'] = data['min_size']
-    global_data['filtering']['containers'] = split_and_filter_empty(data['containers'])
+    filter_info['title_regex'] = data['title_regex']
+    filter_info['resolutions'] = split_and_filter_empty(data['resolutions'])
+    filter_info['encodings'] = split_and_filter_empty(data['encodings'])
+    filter_info['min_size'] = data['min_size']
+    filter_info['containers'] = split_and_filter_empty(data['containers'])
 
-    return jsonify(global_data)
+    write_dict_to_cache("filtering", filter_info)
+
+    return {"msg": "Filter applied successfully."}
 
 # Endpoint for scanning and sending progress updates
 @app.route('/scan', methods=['POST'])
 def scan():
-    if global_data['running']['isRunning']: #if scan is already running, chill bro
-        global_data['msg'] = "Something is already running. Please wait for it to finish."
-        return jsonify(global_data)
+    running_info = read_dict_from_cache("running")
+    if running_info['isRunning']:
+        return {"msg": "Something is already running. Please wait for it to finish."}
 
     print("runnig scan")
-    data = request.get_json();
-    input_path = global_data['filtering']['path']
+    # data = request.get_json();
+    
+    filter_info = read_dict_from_cache("filtering")
+    input_path = filter_info['path']
     if not os.path.exists(input_path):
-        return jsonify(global_data)
+        return {"msg": "Input path does not exist."}
+    
+    running_info = read_dict_from_cache("running")
 
     def scanning():
-        global_data['running']['progress'] = 0
-        global_data['running']['time_left'] = -1
-        global_data['running']['found_items'] = []
-        global_data['running']['time_per_item'] = []
-        global_data['running']['isRunning'] = True;
-        global_data['running']['total_time'] = 0
+        running_info['progress'] = 0
+        running_info['time_left'] = -1
+        found_items = []
+        running_info['time_per_item'] = []
+        running_info['isRunning'] = True;
+        running_info['total_time'] = 0
         total_files = sum([len(files) for r, d, files in os.walk(input_path)])
-        global_data['running']['total_items'] = total_files
+        running_info['total_items'] = total_files
         processed_files = 0
         for root, dirs, files in os.walk(input_path):
             for f in files:
@@ -106,21 +188,24 @@ def scan():
                 }
 
                 processed_files += 1
-                global_data['running']['processed_items'] = processed_files
+                running_info['processed_items'] = processed_files
                 endTime = time.time()
-                global_data['running']['time_per_item'].append(endTime - startTime)
-                global_data['running']['total_time'] = sum(global_data['running']['time_per_item'])
-                global_data['running']['time_left'] = (total_files - processed_files) * (sum(global_data['running']['time_per_item']) / processed_files)
-                global_data['running']['progress'] = int((processed_files / total_files) * 100)
+                running_info['time_per_item'].append(endTime - startTime)
+                running_info['total_time'] = sum(running_info['time_per_item'])
+                running_info['time_left'] = (total_files - processed_files) * (sum(running_info['time_per_item']) / processed_files)
+                running_info['progress'] = int((processed_files / total_files) * 100)
                 print(f"Processed {processed_files} files out of {total_files}.")
-                if not filter_moviefile(video, global_data['filtering']):
+                if not filter_moviefile(video, filter_info):
                     continue
 
-                global_data['running']['found_items'].append(video)
+                found_items.append(video)
 
-        global_data['running']['processed_items'] = total_files
-        global_data['running']['progress'] = 100
-        global_data['running']['isRunning'] = False;
+                write_dict_to_cache("found_items", found_items)
+                write_listdict_to_cache("running", running_info)
+
+        running_info['processed_items'] = total_files
+        running_info['progress'] = 100
+        running_info['isRunning'] = False;
         #return success
     scanning();
     return jsonify(global_data)
@@ -156,44 +241,49 @@ def filter_moviefile(videoInfo, filter_dict):
 
 @app.route('/index', methods=['POST'])
 def index():
-    if global_data['running']['isRunning']: #if somthing is already running, chill bro-
-        global_data['msg'] = "Something is already running. Please wait for it to finish."
-        return jsonify(global_data)  
+    running_info = read_dict_from_cache("running")
+    if running_info['isRunning']:
+        return {"msg": "Something is already running. Please wait for it to finish."}
     input_path = request.form.get('input_path')
     # path = os.path.expanduser("~") + input_path
+
+    filter_info = read_dict_from_cache("filtering")
+
     path = input_path
     if os.path.exists(path):
         print("input_path: " + input_path)
-        global_data['filtering']['path'] = path
+        filter_info['path'] = path
         items = []
         for item in os.listdir(path):
             items.append(item)
-        global_data['filtering']['sub_directories'] = items
+        filter_info['sub_directories'] = items
 
-    return jsonify(global_data)
+    write_dict_to_cache("filtering", filter_info)
+
+    return {"msg": "Found path!"}
 
 
 @app.route('/transcode_video_que', methods=['POST'])
 def transcode_video_que():
-    if global_data['running']['isRunning']: #if somthing is already running, chill bro-
-        global_data['msg'] = "Something is already running. Please wait for it to finish."
-        return jsonify(global_data)
-    global_data['running']['isRunning'] = True;
+    running_info = read_dict_from_cache("running")
+    if running_info['isRunning']:
+        return {"msg": "Something is already running. Please wait for it to finish."}
+    running_info['isRunning'] = True;
 
 
     global_data['transcode_settings'] = request.get_json();
 
-    global_data['running']['processed_items'] = 0
-    global_data['running']['progress'] = 0
-    global_data['running']['time_left'] = -1
-    global_data['running']['time_per_item'] = []
-    global_data['running']['isRunning'] = True;
-    global_data['running']['total_time'] = 0
-    total_files = len(global_data['running']['found_items'])
+    running_info['processed_items'] = 0
+    running_info['progress'] = 0
+    running_info['time_left'] = -1
+    running_info['time_per_item'] = []
+    running_info['isRunning'] = True;
+    running_info['total_time'] = 0
+    total_files = len(running_info['found_items'])
 
     processed_files = 0
 
-    for item in global_data['running']['found_items']:
+    for item in running_info['found_items']:
         startTime = time.time()
 
         resolution = global_data['transcode_settings']['resolution'];
@@ -210,17 +300,17 @@ def transcode_video_que():
                     remove_original=True,
                 ):
             # print(transcode_info)
-            global_data['running']['progress'] = (float(transcode_info['frame'])/float(transcode_info['NUMBER_OF_FRAMES']))*100.0
-            global_data['running']['total_time'] = time.time() - startTime
-            global_data['running']['processed_items'] = transcode_info['frame']
-            global_data['running']['total_items'] = transcode_info['NUMBER_OF_FRAMES']
+            running_info['progress'] = (float(transcode_info['frame'])/float(transcode_info['NUMBER_OF_FRAMES']))*100.0
+            running_info['total_time'] = time.time() - startTime
+            running_info['processed_items'] = transcode_info['frame']
+            running_info['total_items'] = transcode_info['NUMBER_OF_FRAMES']
 
             if transcode_info['fps'] != 0:
-                global_data['running']['time_left'] = (transcode_info['NUMBER_OF_FRAMES'] - transcode_info['frame'])/transcode_info['fps']
+                running_info['time_left'] = (transcode_info['NUMBER_OF_FRAMES'] - transcode_info['frame'])/transcode_info['fps']
 
         processed_files += 1
         endTime = time.time()
-        # global_data['running']['time_per_item'].append(endTime - startTime)
+        # running_info['time_per_item'].append(endTime - startTime)
         print(f"Transcoded {processed_files} files out of {total_files}.")
 
         endTime = time.time()
@@ -233,7 +323,20 @@ def home():
 
 @app.route('/fetch-data', methods=['GET'])
 def fetch_data():
+    global_data = {'filtering': read_dict_from_cache("filtering"),
+                    'running': read_dict_from_cache("running"),
+                    'transcode_settings': read_dict_from_cache("transcode_settings")}
     return jsonify(global_data)
 
+
+initialize_cache()
+
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=8265)
+    app.run(debug=True, host='0.0.0.0', port=8889)
+
+    # Set a value for the key 'hello'
+    print('writing hello to world/cache')
+    r.set('hello', 'world')
+
+    # Get the value for the key 'hello'
+    print(r.get('hello'))
