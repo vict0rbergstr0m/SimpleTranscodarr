@@ -3,7 +3,7 @@ Then just run "docker compose up" in cmd when cd in project root.
 
 - TODO FOR REAL RELEASE!!!!! dont look a worker for a long time!! aka dont do heavy stuff in the calls from front end, do all the heavy stuff in a seperata thread. aka start a new thread when you get a call from the front end.
 
-- also, you need a consisten storage such as a cache. codeium recomended redis...
+- also, you need a consisten storage such as a cache. codeium recomended redis... dont forget the lock thing when writing so multiple threads arnt writing to the same thing... uuughhh
 
 Create a simple web app that you can deploy in docker using python and flask (pip package) and probably html. The app should allow you to transcode easier.
 

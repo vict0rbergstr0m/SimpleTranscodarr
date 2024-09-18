@@ -3,8 +3,14 @@ import os
 from src.ffmpeg import *
 import re
 import time
+import json
+import redis #cache for consitent memory among threads/workers
+
 
 app = Flask(__name__)
+
+# Create a Redis connection
+redis_client = redis.Redis(host='localhost', port=6379, db=0)
 
 # Define a global variable
 global_data = {
@@ -39,6 +45,7 @@ global_data = {
         'container': 'mkv'
     }
     }
+
 
 @app.route('/apply-filter', methods=['POST'])
 def apply_filter():
@@ -229,5 +236,7 @@ def home():
 def fetch_data():
     return jsonify(global_data)
 
+
+update_global_data();
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=8265)
