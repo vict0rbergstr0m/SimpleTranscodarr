@@ -163,12 +163,15 @@ def scan():
     def scanning():
         running_info['progress'] = 0
         running_info['time_left'] = -1
-        found_items = []
+        running_info['found_items'] = []
         running_info['time_per_item'] = []
         running_info['isRunning'] = True;
         running_info['total_time'] = 0
         total_files = sum([len(files) for r, d, files in os.walk(input_path)])
         running_info['total_items'] = total_files
+
+        write_dict_to_cache("running", running_info)
+
         processed_files = 0
         for root, dirs, files in os.walk(input_path):
             for f in files:
@@ -198,17 +201,17 @@ def scan():
                 if not filter_moviefile(video, filter_info):
                     continue
 
-                found_items.append(video)
+                running_info["found_items"].append(video)
 
-                write_dict_to_cache("found_items", found_items)
-                write_listdict_to_cache("running", running_info)
+                write_dict_to_cache("running", running_info)
 
         running_info['processed_items'] = total_files
         running_info['progress'] = 100
         running_info['isRunning'] = False;
+        write_dict_to_cache("running", running_info)
         #return success
     scanning();
-    return jsonify(global_data)
+    return {"msg": "Scanning started."}
 def filter_moviefile(videoInfo, filter_dict):
     """    
     filter_dict['title_regex']
@@ -332,7 +335,7 @@ def fetch_data():
 initialize_cache()
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8889)
+    app.run(debug=True, host='0.0.0.0', port=8265)
 
     # Set a value for the key 'hello'
     print('writing hello to world/cache')
