@@ -1,17 +1,41 @@
 from flask import Flask, request, render_template, jsonify, Response
 import os
+# from dotenv import load_dotenv
 from src.ffmpeg import *
 import re
 import time
 import redis
-from celery import Celery
+import threading
+from functools import partial
+
+task_que = []
+
+def check_tasks():
+    while True:
+        if len(task_que) > 0:
+            task = task_que.pop(0)
+            task()
+        time.sleep(0.5)
+
+def add_task(func, *args, **kwargs):
+    task_que.append(partial(func, *args, **kwargs))
+
+
+task_thread = threading.Thread(target=check_tasks)
+task_thread.start()
+
+# load_dotenv()
+
+# ip = os.getenv('host_address')
+# ip = "192.168.50.68"
 
 app = Flask(__name__)
+app.config['CELERY_BROKER_URL'] = f'redis://localhost:6379/0'
 
 # Create a Redis connection
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
-# Define a global variable
+# Define a global_data dictionary
 """global_data = {
     'msg': '',
     'filtering': {
@@ -91,27 +115,27 @@ def initialize_cache():
 
 def write_value_to_cache(key_name: str, value: str):
     try:
-        r.set(key_name, value)
+        redis_client.set(key_name, value)
     except redis.exceptions.RedisError as e:
         print(f"Error writing to cache: {e}")
 
 def write_dict_to_cache(key_name: str, dictionary: dict):
     try:
         jsontext = json.dumps(dictionary)
-        r.set(key_name, jsontext)
+        redis_client.set(key_name, jsontext)
     except redis.exceptions.RedisError as e:
         print(f"Error writing to cache: {e}")
 
 
 def read_value_from_cache(key_name: str):
     try:
-        return r.get(key_name)
+        return redis_client.get(key_name)
     except redis.exceptions.RedisError as e:
         print(f"Error reading from cache: {e}")
 
 def read_dict_from_cache(key_name: str):
     try:
-        string_dict = r.get(key_name)
+        string_dict = redis_client.get(key_name)
         if string_dict is None:
             return {}
         found_dict = json.loads(string_dict)
@@ -143,6 +167,62 @@ def apply_filter():
 
     return {"msg": "Filter applied successfully."}
 
+def scanning(filter_info, input_path):
+
+    print("Scanning: " + input_path)
+
+    running_info = read_dict_from_cache("running")
+    running_info['progress'] = 0
+    running_info['time_left'] = -1
+    running_info['found_items'] = []
+    running_info['time_per_item'] = []
+    running_info['isRunning'] = True;
+    running_info['total_time'] = 0
+    total_files = sum([len(files) for r, d, files in os.walk(input_path)])
+    running_info['total_items'] = total_files
+
+    write_dict_to_cache("running", running_info)
+
+    processed_files = 0
+    for root, dirs, files in os.walk(input_path):
+        for f in files:
+            startTime = time.time()
+            path = os.path.join(root, f)
+            full_info = get_media_info(path);
+            if full_info is None or not 'streams' in full_info or len(full_info['streams']) == 0:
+                continue;
+            video_info = full_info['streams'][0]
+            video = {
+                'name': f,
+                'path': path,
+                'res': video_info['height'],
+                'encoding': video_info['codec_name'],
+                'container': os.path.splitext(f)[1],
+                'size': f"{os.path.getsize(path)/ (1024 * 1024 * 1024):.2f}GB",
+            }
+
+            processed_files += 1
+            running_info['processed_items'] = processed_files
+            endTime = time.time()
+            running_info['time_per_item'].append(endTime - startTime)
+            running_info['total_time'] = sum(running_info['time_per_item'])
+            running_info['time_left'] = (total_files - processed_files) * (sum(running_info['time_per_item']) / processed_files)
+            running_info['progress'] = int((processed_files / total_files) * 100)
+            print(f"Processed {processed_files} files out of {total_files}.")
+            if not filter_moviefile(video, filter_info):
+                continue
+
+            running_info["found_items"].append(video)
+            running_info["found_items"].sort(key=lambda x: x['name'])
+
+
+            write_dict_to_cache("running", running_info)
+
+    running_info['processed_items'] = total_files
+    running_info['progress'] = 100
+    running_info['isRunning'] = False;
+    write_dict_to_cache("running", running_info)
+
 # Endpoint for scanning and sending progress updates
 @app.route('/scan', methods=['POST'])
 def scan():
@@ -159,59 +239,10 @@ def scan():
         return {"msg": "Input path does not exist."}
     
     running_info = read_dict_from_cache("running")
-
-    def scanning():
-        running_info['progress'] = 0
-        running_info['time_left'] = -1
-        running_info['found_items'] = []
-        running_info['time_per_item'] = []
-        running_info['isRunning'] = True;
-        running_info['total_time'] = 0
-        total_files = sum([len(files) for r, d, files in os.walk(input_path)])
-        running_info['total_items'] = total_files
-
-        write_dict_to_cache("running", running_info)
-
-        processed_files = 0
-        for root, dirs, files in os.walk(input_path):
-            for f in files:
-                startTime = time.time()
-                path = os.path.join(root, f)
-                full_info = get_media_info(path);
-                if full_info is None or not 'streams' in full_info or len(full_info['streams']) == 0:
-                    continue;
-                video_info = full_info['streams'][0]
-                video = {
-                    'name': f,
-                    'path': path,
-                    'res': video_info['height'],
-                    'encoding': video_info['codec_name'],
-                    'container': os.path.splitext(f)[1],
-                    'size': f"{os.path.getsize(path)/ (1024 * 1024 * 1024):.2f}GB",
-                }
-
-                processed_files += 1
-                running_info['processed_items'] = processed_files
-                endTime = time.time()
-                running_info['time_per_item'].append(endTime - startTime)
-                running_info['total_time'] = sum(running_info['time_per_item'])
-                running_info['time_left'] = (total_files - processed_files) * (sum(running_info['time_per_item']) / processed_files)
-                running_info['progress'] = int((processed_files / total_files) * 100)
-                print(f"Processed {processed_files} files out of {total_files}.")
-                if not filter_moviefile(video, filter_info):
-                    continue
-
-                running_info["found_items"].append(video)
-
-                write_dict_to_cache("running", running_info)
-
-        running_info['processed_items'] = total_files
-        running_info['progress'] = 100
-        running_info['isRunning'] = False;
-        write_dict_to_cache("running", running_info)
-        #return success
-    scanning();
+    # celery_client.send_task("scanning", args=(filter_info, input_path));
+    add_task(scanning, filter_info, input_path)
     return {"msg": "Scanning started."}
+
 def filter_moviefile(videoInfo, filter_dict):
     """    
     filter_dict['title_regex']
@@ -266,41 +297,36 @@ def index():
     return {"msg": "Found path!"}
 
 
-@app.route('/transcode_video_que', methods=['POST'])
-def transcode_video_que():
-    running_info = read_dict_from_cache("running")
-    if running_info['isRunning']:
-        return {"msg": "Something is already running. Please wait for it to finish."}
+def transcoding(transcode_settings, running_info):
     running_info['isRunning'] = True;
-
-
-    global_data['transcode_settings'] = request.get_json();
-
     running_info['processed_items'] = 0
     running_info['progress'] = 0
     running_info['time_left'] = -1
     running_info['time_per_item'] = []
-    running_info['isRunning'] = True;
     running_info['total_time'] = 0
     total_files = len(running_info['found_items'])
+    write_dict_to_cache("running", running_info)
+
+    print("Starting transcoding...")
 
     processed_files = 0
 
     for item in running_info['found_items']:
+        print(f"Transcoding {item['name']}...")
         startTime = time.time()
 
-        resolution = global_data['transcode_settings']['resolution'];
+        resolution = transcode_settings['resolution'];
         if resolution == "":
             resolution = item['res'];
 
         for transcode_info in transcode_file(item['path'],
                     item['path'].replace(item['name'],""),
                     resolution,
-                    global_data['transcode_settings']['codec'],
-                    global_data['transcode_settings']['crf'],
+                    transcode_settings['codec'],
+                    transcode_settings['crf'],
                     "slow",
-                    global_data['transcode_settings']['container'],
-                    remove_original=True,
+                    transcode_settings['container'],
+                    remove_original=False,
                 ):
             # print(transcode_info)
             running_info['progress'] = (float(transcode_info['frame'])/float(transcode_info['NUMBER_OF_FRAMES']))*100.0
@@ -311,14 +337,26 @@ def transcode_video_que():
             if transcode_info['fps'] != 0:
                 running_info['time_left'] = (transcode_info['NUMBER_OF_FRAMES'] - transcode_info['frame'])/transcode_info['fps']
 
+            write_dict_to_cache("running", running_info)
+
         processed_files += 1
-        endTime = time.time()
+        # endTime = time.time()
         # running_info['time_per_item'].append(endTime - startTime)
         print(f"Transcoded {processed_files} files out of {total_files}.")
 
-        endTime = time.time()
 
-    return jsonify(global_data)
+    running_info['isRunning'] = False;
+    write_dict_to_cache("running", running_info)
+
+@app.route('/transcode_video_que', methods=['POST'])
+def transcode_video_que():
+    running_info = read_dict_from_cache("running")
+    if running_info['isRunning']:
+        return {"msg": "Something is already running. Please wait for it to finish."}
+
+    transcode_settings = request.get_json();
+    add_task(transcoding, transcode_settings, running_info)
+    return {"msg": "Starting transcoding!"}
 
 @app.route('/')
 def home():
@@ -339,7 +377,7 @@ if __name__ == '__main__':
 
     # Set a value for the key 'hello'
     print('writing hello to world/cache')
-    r.set('hello', 'world')
+    redis_client.set('hello', 'world')
 
     # Get the value for the key 'hello'
-    print(r.get('hello'))
+    print(redis_client.get('hello'))

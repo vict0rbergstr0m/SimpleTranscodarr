@@ -324,6 +324,13 @@
 
         async function update() {
             const data = await fetchData(); // Return all data
+            
+            if (data.running.progress > 99) {
+                changeInterval(defaultInterval);
+            }else if(data.running.progress > 0) {
+                changeInterval(fastInterval);
+            }
+            
             await updateProgress(data);
             await updatePaths(data);
             await updateFoundFiles(data);
@@ -333,6 +340,25 @@
             const response = await fetch('/fetch-data');
             const data = await response.json();
             return data;
+        }
+
+
+        function formatSeconds(seconds) {
+
+            if (typeof seconds !== "number") 
+            {
+                return seconds;
+            }
+
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secondsRemaining = seconds % 60;
+
+            return `${padZero(hours)}:${padZero(minutes)}:${padZero(secondsRemaining)}`;
+        }
+
+        function padZero(number) {
+            return (number < 10 ? '0' : '') + number;
         }
 
         async function updateProgress(data) {
@@ -362,11 +388,7 @@
             }
 
             infoItem.innerHTML = `&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`
-            infoItem.innerHTML += `${data.running.processed_items}/${data.running.total_items} items, Time left: ${timeLeft}s, Total time: ${totalTime}s`;
-        
-            if (progress > 99) {
-                changeInterval(defaultInterval);
-            }
+            infoItem.innerHTML += `${data.running.processed_items}/${data.running.total_items} items, Time left: ${formatSeconds(timeLeft)}, Total time: ${formatSeconds(totalTime)}s`;
         }
 
         async function updatePaths(data) {
