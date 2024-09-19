@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import os
 import re
+import sys
 
 def __run_command(command):
     """Run a shell command and return the output."""
@@ -16,14 +17,16 @@ def __run_command(command):
 def __run_open_command(command):
     """Run a shell command and yield the output line by line."""
     os.chdir(os.path.expanduser('~'))
+
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
     while True:
-        output_err = process.stderr.readline()
+        # output_err = process.stderr.readline().decode("utf8", errors="replace").strip()
         output_out = process.stdout.readline()
+        output_err = process.stdout.readline()
+        
         if output_out == '' and process.poll() is not None:
             break
         if output_out:
-            # print(output_out.strip())
             yield output_out.strip(), output_err.strip()
 
 def get_ffmpeg_version():
